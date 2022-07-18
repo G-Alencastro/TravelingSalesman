@@ -115,7 +115,6 @@ if __name__ == '__main__':
                 print(pop.individuals[i].fit)
             print('-'*12)
 
-
         pop = pop.get_new_gen()
     
     
