@@ -1,121 +1,133 @@
 from ctypes.wintypes import POINT
-from random import shuffle, randint
+from random import shuffle, randint, random
 
-class Genome:
-    def __init__(self, gn):
-        self.gene = [n for n in range(gn)]
-        shuffle(self.gene)
+def euc_dis(p1, p2):
+    return ((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)**0.5
 
 class Individual:
-    def __init__(self, gn):
-        self.genome = Genome(gn)
+    def __init__(self, genome_length):
+        self.geno_len = genome_length
+        self.genome = [n for n in range(genome_length)]
+        shuffle(self.genome)
         self.fit = 0
-        self.ac_fit = 0
 
-    def fitness(self, points):
-        fit = 0
+    def get_fit(self, points):
+        fit = 0 
         for i in range(len(points)):
-            p1 = self.genome.gene[i]
-            p2 = self.genome.gene[i-1]
-            fit += ((points[p1][0] - points[p2][0])**2+
-            (points[p1][1] - points[p2][1])**2)**0.5
-
-        self.fit = (1/fit)*99999
+            p1 = self.genome[i]
+            p2 = self.genome[i-1]
+            fit += euc_dis(points[p1], points[p2])
+        self.fit = 1/fit*100000
         return fit    
 
 class Population:
-    def __init__(self, ind, gn):
-        self.individuals = [Individual(gn) for _ in range(ind)]
-    
-    def get_pop_fit(self, points):
+    def __init__(self, n_ind, genome_length):
+        self.n_ind = n_ind
+        self.individuals = [Individual(genome_length) for _ in range(n_ind)]
+        self.mean_fit = 0
+
+    def fit_pop(self, pts):
+        # get mean fit of population
         for ind in self.individuals:
-            ind.fitness(points)
+            self.mean_fit += ind.get_fit(pts)
+        self.mean_fit /= self.n_ind
 
-    def sort_inds(self):
-        k = True
-        while k:
-            k = False
-            for n in range(len(self.individuals)-1):     
-                if self.individuals[n].fit > self.individuals[n+1].fit:
-                    self.individuals[n], self.individuals[n+1] = self.individuals[n+1], self.individuals[n]
-                    k = True
 
-    def get_new_ind(self):
+        # sorting the population by fitness
+        changed = True
+        while changed:
+            changed = False
+            for c in range(1, self.n_ind):
+                if self.individuals[c].fit > self.individuals[c-1].fit:
+                    self.individuals[c], self.individuals[c-1] = self.individuals[c-1], self.individuals[c]
+                    changed = True
 
+    def new_population(self, elite_num=50):
+        def crossover(fathers):
+            son = Individual(fathers[0].geno_len)
+            cut_num = randint(0, fathers[0].geno_len)
+
+            new_genome00 = fathers[0].genome[0:cut_num]
+            new_genome01 = fathers[0].genome[cut_num:fathers[0].geno_len]
+            new_genome11 = fathers[1].genome[cut_num:fathers[0].geno_len]
+
+            repeated_index = []
+            for c in range(len(new_genome11)):
+                if new_genome11[c] in new_genome00:
+                    repeated_index.append(c)
+
+            non_repeated = []
+            for c in range(len(new_genome01)):
+                if new_genome01[c] not in new_genome11:
+                    non_repeated.append(new_genome01[c])
+                        
+            for c in range(len(repeated_index)):
+                new_genome11[repeated_index[c]] = non_repeated[c]
+
+            son_genome = new_genome00 + new_genome11
+            son.genome = son_genome
+
+            return son
+
+        def mutation(ind, mut_tax=0.005):
+            mut = random()
+            if mut <= mut_tax:
+                s_genes = randint(0, ind.geno_len-1) 
+                ind.genome[s_genes], ind.genome[s_genes-1] = ind.genome[s_genes-1], ind.genome[s_genes]
         
-        def give_ac_fit():
-            ac_fit = 0
+        def choose_father():
+            ag_fit = 0
+            ag_fit_list = []
             for ind in self.individuals:
-                ac_fit += ind.fit
-                ind.ac_fit = ac_fit
-
-        def random_ac():
-            return randint(0, int(self.individuals[-1].ac_fit))
-        
-        def select_father():
- 
-            selected = self.individuals[-1]
-            sortn = random_ac()
-            for d in range(len(self.individuals)-1):
-                ind_ac1 = self.individuals[d].ac_fit
-                ind_ac2 = self.individuals[d+1].ac_fit
-                if ind_ac1 < sortn > ind_ac2:
-                    selected = self.individuals[d]
-            return selected
-        
-        def crossover(f1, f2):
-            f1_gn = f1.genome.gene
-            f2_gn = f2.genome.gene
-            s1_gn = [-1 for _  in range(len(f1_gn))]
-
-            oc = 0       
-            while True:
-                s1_gn[oc] = f1_gn[oc]
-                nic = f1_gn.index(f2_gn[oc])
-                if nic == 0:
-                    break
-                oc = nic
-
-            for c in range(len(f1_gn)):
-                if s1_gn[c] == -1:
-                    s1_gn[c] = f2_gn[c]  
+                ag_fit += ind.fit
+                ag_fit_list.append(ag_fit)
+            self.mean_fit = ag_fit/self.n_ind
             
-            new_ind =  Individual(len(f1_gn))
-            new_ind.genome.gene = s1_gn
-            return new_ind
+            chosen_num = randint(0, int(ag_fit))
+            for c in range(self.n_ind-1):
+                if ag_fit_list[c] < chosen_num < ag_fit_list[c+1]:
+                    return self.individuals[c]
+            return self.individuals[0]
 
-        self.sort_inds()
+        new_inds = [] +self.individuals[:elite_num]
+        for _ in range(self.n_ind-elite_num):
+            father01, father02 = choose_father(), choose_father()
+            son = crossover([father01, father02])
+            mutation(son)
+            new_inds.append(son)
 
-        give_ac_fit()
-        
-        f1 = select_father()
-        f2 = select_father()
-        return crossover(f1, f2)
-
-    def get_new_gen(self):
-        pop_len = len(self.individuals)
-        new_gen = Population(pop_len, len(self.individuals[0].genome.gene))
-        new_inds = [self.get_new_ind() for _ in range(pop_len)]
-        new_gen.individuals = new_inds       
-        return new_gen
+        self.individuals = new_inds
 
         
 if __name__ == '__main__':
-    np = 20
-    pop_len =500
-    pop = Population(pop_len, np)
-    points = [(randint(1, 100), randint(1, 100)) for _ in range(np)]
-    for c in range(3000):
-        pop.get_pop_fit(points)
+    for c in range(10):
+        cut_num = 5
+        new_genome0 = [n for n in range(10)]
+        shuffle(new_genome0)
+        new_genome1 = [n for n in range(10)]
+        shuffle(new_genome0)
 
-        pop.sort_inds()
-        if c%10 == 0:
-            print(f'GEN: {c}')
-            for i in range(pop_len-5, pop_len):
-                print(pop.individuals[i].fit)
-            print('-'*12)
+        new_genome00 = new_genome0[0:cut_num]
+        new_genome01 = new_genome0[cut_num:10]
+        new_genome11 = new_genome1[cut_num:10]
 
-        pop = pop.get_new_gen()
-    
-    
+        repeated_index = []
+        for c in range(len(new_genome11)):
+            if new_genome11[c] in new_genome00:
+                repeated_index.append(c)
+
+        non_repeated = []
+        for c in range(len(new_genome01)):
+            if new_genome01[c] not in new_genome11:
+                non_repeated.append(new_genome01[c])
+                    
+        for c in range(len(repeated_index)):
+            new_genome11[repeated_index[c]] = non_repeated[c]
+
+        son_genome = new_genome00 + new_genome11
+
+        print(cut_num)
+        print(new_genome0)
+        print(son_genome)
+        print(new_genome1)
         
